@@ -40,7 +40,7 @@
 #define SEALEVELPRESSURE_HPA (1013.25)
 
 // Finally, here are the variables I want to change often and pull them all together here
-#define SOFTWARERELEASENUMBER "0.20"
+#define SOFTWARERELEASENUMBER "0.21"
 
 // Included Libraries
 #include "Adafruit_FRAM_I2C.h"        // Library for FRAM functions
@@ -99,8 +99,6 @@ bool solarPowerMode;                                // Changes the PMIC settings
 bool verboseMode;                                   // Enables more active communications for configutation and setup
 retained char Signal[17];                           // Used to communicate Wireless RSSI and Description
 const char* levels[6] = {"Poor", "Low", "Medium", "Good", "Very Good", "Great"};
-float heatIndexF;                                   // Will cacluate the heat index and report to Ubidots
-char heatIndexString[16];
 
 // Time Period Related Variables
 time_t t;                                           // Global time vairable
@@ -128,6 +126,9 @@ float bmeHumidity;
 char bmeTempString[8];
 char bmePressureString[16];
 char bmeHumidityString[8];
+float heatIndexF;                                   // Will cacluate the heat index and report to Ubidots
+char heatIndexString[16];
+
 
 void setup()                                // Note: Disconnected Setup()
 {
