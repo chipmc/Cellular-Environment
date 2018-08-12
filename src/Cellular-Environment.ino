@@ -40,7 +40,7 @@
 #define SEALEVELPRESSURE_HPA (1013.25)
 
 // Finally, here are the variables I want to change often and pull them all together here
-#define SOFTWARERELEASENUMBER "0.21"
+#define SOFTWARERELEASENUMBER "0.23"
 
 // Included Libraries
 #include "Adafruit_FRAM_I2C.h"        // Library for FRAM functions
@@ -97,7 +97,7 @@ const char* releaseNumber = SOFTWARERELEASENUMBER;  // Displays the release on t
 byte controlRegister;                               // Stores the control register values
 bool solarPowerMode;                                // Changes the PMIC settings
 bool verboseMode;                                   // Enables more active communications for configutation and setup
-retained char Signal[17];                           // Used to communicate Wireless RSSI and Description
+retained char SignalString[17];                           // Used to communicate Wireless RSSI and Description
 const char* levels[6] = {"Poor", "Low", "Medium", "Good", "Very Good", "Great"};
 
 // Time Period Related Variables
@@ -109,7 +109,7 @@ byte currentDailyPeriod;                            // We will keep daily counts
 int stateOfCharge = 0;                              // Stores battery charge level value
 int lowBattLimit;                                   // Trigger for Low Batt State
 bool lowPowerMode;                                  // Flag for Low Power Mode operations
-
+bool watchDogFlag = false;
 
 // This section is where we will initialize sensor specific variables, libraries and function prototypes
 // CCS811 Air Quality Sensor variables
@@ -152,7 +152,7 @@ void setup()                                // Note: Disconnected Setup()
   deviceID.toCharArray(responseTopic,125);
   Particle.subscribe(responseTopic, UbidotsHandler, MY_DEVICES);      // Subscribe to the integration response event
 
-  Particle.variable("Signal", Signal);                                // Particle variables that enable monitoring using the mobile app
+  Particle.variable("Signal", SignalString);                                // Particle variables that enable monitoring using the mobile app
   Particle.variable("ResetCount", resetCount);
   Particle.variable("Release",releaseNumber);
   Particle.variable("stateOfChg", stateOfCharge);
@@ -209,6 +209,10 @@ void setup()                                // Note: Disconnected Setup()
     resetCount++;
     FRAMwrite8(RESETCOUNT,static_cast<uint8_t>(resetCount));            // If so, store incremented number - watchdog must have done This
   }
+  if (resetCount >=6) {                                                 // If we get to resetCount 4, we are resetting without entering the main loop
+    FRAMwrite8(RESETCOUNT,4);                                            // The hope here is to get to the main loop and report a value of 4 which will indicate this issue is occuring
+    fullModemReset();                                                   // This will reset the modem and the device will reboot
+  }
 
   int8_t tempTimeZoneOffset = FRAMread8(TIMEZONE);                      // Load Time zone data from FRAM
   if (tempTimeZoneOffset <= 12 && tempTimeZoneOffset >= -12)  Time.zone((float)tempTimeZoneOffset);  // Load Timezone from FRAM
@@ -245,9 +249,15 @@ void setup()                                // Note: Disconnected Setup()
 
 void loop()
 {
+  if (verboseMode && watchDogFlag) {
+    waitUntil(meterParticlePublish);
+    Particle.publish("Watchdog","Petted");
+    lastPublish = millis();
+    watchDogFlag = false;
+  }
   switch(state) {
   case IDLE_STATE:
-    if (!waiting && millis() > (keepAwakeTimeStamp+sleepWait)) state = SLEEPING_STATE;
+    if (!waiting && lowPowerMode && millis() > (keepAwakeTimeStamp+sleepWait)) state = SLEEPING_STATE;
     if (Time.hour() != currentHourlyPeriod) state = MEASURING_STATE;    // We want to report on the hour but not after bedtime
     if (stateOfCharge <= lowBattLimit) state = LOW_BATTERY_STATE;               // The battery is low - sleep
     break;
@@ -351,8 +361,8 @@ void loop()
       delay(2000);                                          // This makes sure it goes through before reset
       if (resetCount <= 3)  System.reset();                 // Today, only way out is reset
       else {
-        FRAMwrite8(RESETCOUNT,0);                           // Time for a hard reset
-        digitalWrite(hardResetPin,HIGH);                    // Zero the count so only every three
+        FRAMwrite8(RESETCOUNT,0);                           // Zero the ResetCount
+        fullModemReset();                                   // Full Modem reset and reboot
       }
     }
     break;
@@ -436,7 +446,7 @@ void getSignalStrength()
     CellularSignal sig = Cellular.RSSI();  // Prototype for Cellular Signal Montoring
     int rssi = sig.rssi;
     int strength = map(rssi, -131, -51, 0, 5);
-    snprintf(Signal,17, "%s: %d", levels[strength], rssi);
+    snprintf(SignalString,sizeof(SignalString), "%s: %d", levels[strength], rssi);
 }
 
 int getTemperature()
@@ -455,6 +465,7 @@ void watchdogISR()
   if (doneEnabled) {
     digitalWrite(donePin, HIGH);                      // Pet the watchdog
     digitalWrite(donePin, LOW);
+    watchDogFlag = true;
   }
 }
 
@@ -471,6 +482,7 @@ bool connectToParticle()
   Particle.connect();                                      // Connect to Particle
   if(!waitFor(Particle.connected,30000)) return false;     // Connect to Particle - give it 30 seconds
   Particle.process();
+  Particle.syncTime();                                      // Force Sync to improve accuracy
   return true;
 }
 
@@ -688,4 +700,19 @@ bool meterParticlePublish(void)
 {
   if(millis() - lastPublish >= publishFrequency) return 1;
   else return 0;
+}
+
+void fullModemReset() {  // Adapted form Rikkas7's https://github.com/rickkas7/electronsample
+
+	Particle.disconnect(); 	                                         // Disconnect from the cloud
+	unsigned long startTime = millis();  	                           // Wait up to 15 seconds to disconnect
+	while(Particle.connected() && millis() - startTime < 15000) {
+		delay(100);
+	}
+	// Reset the modem and SIM card
+	// 16:MT silent reset (with detach from network and saving of NVM parameters), with reset of the SIM card
+	Cellular.command(30000, "AT+CFUN=16\r\n");
+	delay(1000);
+	// Go into deep sleep for 10 seconds to try to reset everything. This turns off the modem as well.
+	System.sleep(SLEEP_MODE_DEEP, 10);
 }
