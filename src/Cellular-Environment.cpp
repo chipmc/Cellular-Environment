@@ -14,6 +14,7 @@
 // v1.03 - Added webhook information for the soil sensor
 // v1.04 - Adding watchdog Timer support from the Electron Carrier
 // v1.05 - Fixed measurement bug
+// v1.06 - Fixed Watchdog interrupt bug
 
 
 void setup();
@@ -36,8 +37,8 @@ bool meterParticlePublish(void);
 void fullModemReset();
 void watchdogISR();
 void petWatchdog();
-#line 17 "/Users/chipmc/Documents/Maker/Particle/Projects/Cellular-Environment/src/Cellular-Environment.ino"
-#define SOFTWARERELEASENUMBER "1.05"               // Keep track of release numbers
+#line 18 "/Users/chipmc/Documents/Maker/Particle/Projects/Cellular-Environment/src/Cellular-Environment.ino"
+#define SOFTWARERELEASENUMBER "1.06"               // Keep track of release numbers
 
 // Included Libraries
 #include "Adafruit_BME680.h"
