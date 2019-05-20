@@ -12,9 +12,10 @@
 // v1.03 - Added webhook information for the soil sensor
 // v1.04 - Adding watchdog Timer support from the Electron Carrier
 // v1.05 - Fixed measurement bug
+// v1.06 - Fixed Watchdog interrupt bug
 
 
-#define SOFTWARERELEASENUMBER "1.05"               // Keep track of release numbers
+#define SOFTWARERELEASENUMBER "1.06"               // Keep track of release numbers
 
 // Included Libraries
 #include "Adafruit_BME680.h"
@@ -52,6 +53,7 @@ State state = INITIALIZATION_STATE;
 const int blueLED =       D7;                     // This LED is on the Electron itself
 const int userSwitch =    D5;                     // User switch with a pull-up resistor
 const int donePin =       D6;                     // This pin is used to let the watchdog timer know we are still alive
+const int wakeUpPin =     A7;                     // Pin the watchdog will ping us on
 
 volatile bool watchDogFlag = false;
 
@@ -115,6 +117,7 @@ void setup()                                                      // Note: Disco
   pinMode(blueLED, OUTPUT);                                       // declare the Blue LED Pin as an output
   pinMode(userSwitch,INPUT);                                      // Momentary contact button on board for direct user input
   pinMode(donePin,OUTPUT);                                        // To pet the watchdog
+  pinMode(wakeUpPin, INPUT);                                      // Watchdog interrrupt
 
   char responseTopic[125];
   String deviceID = System.deviceID();                            // Multiple Electrons share the same hook - keeps things straight
@@ -194,7 +197,7 @@ void setup()                                                      // Note: Disco
   if (!lowPowerMode && (stateOfCharge >= lowBattLimit)) connectToParticle();  // If not lowpower or sleeping, we can connect
   connectToParticle();  // For now, let's just connect
 
-  attachInterrupt(donePin,watchdogISR,RISING);
+  attachInterrupt(wakeUpPin,watchdogISR,RISING);
 
   if(verboseMode) Particle.publish("Startup",StartupMessage,PRIVATE);           // Let Particle know how the startup process went
   lastPublish = millis();
