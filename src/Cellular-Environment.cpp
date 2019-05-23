@@ -15,6 +15,7 @@
 // v1.04 - Adding watchdog Timer support from the Electron Carrier
 // v1.05 - Fixed measurement bug
 // v1.06 - Fixed Watchdog interrupt bug
+// v1.07 - Added a step to pet the watchdog at startup
 
 
 void setup();
@@ -37,8 +38,8 @@ bool meterParticlePublish(void);
 void fullModemReset();
 void watchdogISR();
 void petWatchdog();
-#line 18 "/Users/chipmc/Documents/Maker/Particle/Projects/Cellular-Environment/src/Cellular-Environment.ino"
-#define SOFTWARERELEASENUMBER "1.06"               // Keep track of release numbers
+#line 19 "/Users/chipmc/Documents/Maker/Particle/Projects/Cellular-Environment/src/Cellular-Environment.ino"
+#define SOFTWARERELEASENUMBER "1.07"               // Keep track of release numbers
 
 // Included Libraries
 #include "Adafruit_BME680.h"
@@ -186,11 +187,11 @@ void setup()                                                      // Note: Disco
   bme.setIIRFilterSize(BME680_FILTER_SIZE_3);
   bme.setGasHeater(320, 150); // 320*C for 150 ms
 
-  resetCount = EEPROM.read(MEM_MAP::resetCountAddr);                     // Retrive system recount data from FRAM
+  resetCount = EEPROM.read(MEM_MAP::resetCountAddr);                    // Retrive system recount data from FRAM
   if (System.resetReason() == RESET_REASON_PIN_RESET)                   // Check to see if we are starting from a pin reset
   {
     resetCount++;
-    EEPROM.write(MEM_MAP::resetCountAddr, resetCount);                    // If so, store incremented number - watchdog must have done This
+    EEPROM.write(MEM_MAP::resetCountAddr, resetCount);                  // If so, store incremented number - watchdog must have done This
   }
   if (resetCount >=6) {                                                 // If we get to resetCount 4, we are resetting without entering the main loop
     EEPROM.write(MEM_MAP::resetCountAddr,4);                                           // The hope here is to get to the main loop and report a value of 4 which will indicate this issue is occuring
@@ -202,7 +203,7 @@ void setup()                                                      // Note: Disco
   else Time.zone(0);                                                   // Default is GMT in case proper value not in EEPROM
 
   // And set the flags from the control register
-  controlRegister = EEPROM.read(MEM_MAP::controlRegisterAddr);            // Read the Control Register for system modes so they stick even after reset
+  controlRegister = EEPROM.read(MEM_MAP::controlRegisterAddr);          // Read the Control Register for system modes so they stick even after reset
   lowPowerMode    = (0b00000001 & controlRegister);                     // Set the lowPowerMode
   solarPowerMode  = (0b00000100 & controlRegister);                     // Set the solarPowerMode
   verboseMode     = (0b00001000 & controlRegister);                     // Set the verboseMode
@@ -211,18 +212,19 @@ void setup()                                                      // Note: Disco
 
   takeMeasurements();                                                   // For the benefit of monitoring the device
 
-  if (!digitalRead(userSwitch)) {                                     // Rescue mode to locally take lowPowerMode so you can connect to device
-  lowPowerMode = false;                                             // Press the user switch while resetting the device
-    controlRegister = (0b11111110 & controlRegister);       // Turn off Low power mode
+  if (!digitalRead(userSwitch)) {                                       // Rescue mode to locally take lowPowerMode so you can connect to device
+  lowPowerMode = false;                                                 // Press the user switch while resetting the device
+    controlRegister = (0b11111110 & controlRegister);                   // Turn off Low power mode
     EEPROM.write(controlRegister,MEM_MAP::controlRegisterAddr);         // Write to the EEMPROM
   }
 
   if (!lowPowerMode && (stateOfCharge >= lowBattLimit)) connectToParticle();  // If not lowpower or sleeping, we can connect
   connectToParticle();  // For now, let's just connect
 
-  attachInterrupt(wakeUpPin,watchdogISR,RISING);
+  petWatchdog();                                                        // Need to pet the watchdog as we are waking from sleep
+  attachInterrupt(wakeUpPin,watchdogISR,RISING);                        // Attach watchdog interrupt - +1hr watchdog required
 
-  if(verboseMode) Particle.publish("Startup",StartupMessage,PRIVATE);           // Let Particle know how the startup process went
+  if(verboseMode) Particle.publish("Startup",StartupMessage,PRIVATE);   // Let Particle know how the startup process went
   lastPublish = millis();
 }
 
