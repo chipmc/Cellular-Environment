@@ -18,9 +18,10 @@
 // v1.09 - Added a hard Reset feature
 // v1.10 - Added an extra delay for the ERROR_RESET and a publish on hard reset.
 // v1.10 - Added a couple calls to the watchdog timer to align it to the hourly schedule
+// v1.11 - Trying to figure out why the watchdog is not aligning to the hourly schedule
 
 
-#define SOFTWARERELEASENUMBER "1.10"               // Keep track of release numbers
+#define SOFTWARERELEASENUMBER "1.11"               // Keep track of release numbers
 
 // Included Libraries
 #include "Adafruit_BME680.h"
@@ -64,7 +65,7 @@ const int donePin =       D6;                     // This pin is used to let the
 const int wakeUpPin =     A7;                     // Pin the watchdog will ping us on
 const int hardResetPin =  D4;                     // Power Cycles the Electron and the Carrier Board
 
-volatile bool watchDogFlag = false;
+volatile bool watchdogFlag = false;
 
 // Timing Variables
 const int wakeBoundary = 1*3600 + 0*60 + 0;         // 1 hour 0 minutes 0 seconds
@@ -127,6 +128,7 @@ void setup()                                                      // Note: Disco
 
   pinMode(blueLED, OUTPUT);                                       // declare the Blue LED Pin as an output
   pinMode(userSwitch,INPUT);                                      // Momentary contact button on board for direct user input
+  pinResetFast(donePin);
   pinMode(donePin,OUTPUT);                                        // To pet the watchdog
   pinMode(wakeUpPin, INPUT);                                      // Watchdog interrrupt
   pinMode(hardResetPin,OUTPUT);                                   // Pin used to power-cycle device
@@ -228,7 +230,7 @@ void loop()
   switch(state) {
   case IDLE_STATE:
     if (verboseMode && state != oldState) publishStateTransition();
-    if (watchDogFlag) petWatchdog();
+    if (watchdogFlag) petWatchdog();
     if (lowPowerMode && (millis() - stayAwakeTimeStamp) > stayAwake) state = SLEEPING_STATE;
     if (Time.hour() != currentHourlyPeriod) state = MEASURING_STATE;    // We want to report on the hour but not after bedtime
     if (stateOfCharge <= lowBattLimit) state = LOW_BATTERY_STATE;               // The battery is low - sleep
@@ -663,13 +665,14 @@ void fullModemReset() {  // Adapted form Rikkas7's https://github.com/rickkas7/e
 }
 
 void watchdogISR() {
-  watchDogFlag = true;
+  watchdogFlag = true;
 }
 
-void petWatchdog() {
-  digitalWrite(donePin,HIGH);
-  digitalWrite(donePin,LOW);
-  watchDogFlag = false;
+void petWatchdog()
+{
+  digitalWriteFast(donePin, HIGH);                                        // Pet the watchdog
+  digitalWriteFast(donePin, LOW);
+  watchdogFlag = false;
 }
 
 int hardResetNow(String command)                                      // Will perform a hard reset on the Electron
