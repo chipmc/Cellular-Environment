@@ -15,9 +15,12 @@
 // v1.06 - Fixed Watchdog interrupt bug
 // v1.07 - Added a step to pet the watchdog at startup
 // v1.08 - Implemented new program flow to imporve timing control
+// v1.09 - Added a hard Reset feature
+// v1.10 - Added an extra delay for the ERROR_RESET and a publish on hard reset.
+// v1.10 - Added a couple calls to the watchdog timer to align it to the hourly schedule
 
 
-#define SOFTWARERELEASENUMBER "1.08"               // Keep track of release numbers
+#define SOFTWARERELEASENUMBER "1.10"               // Keep track of release numbers
 
 // Included Libraries
 #include "Adafruit_BME680.h"
@@ -67,7 +70,7 @@ volatile bool watchDogFlag = false;
 const int wakeBoundary = 1*3600 + 0*60 + 0;         // 1 hour 0 minutes 0 seconds
 const unsigned long stayAwakeLong = 90000;          // In lowPowerMode, how long to stay awake every hour
 const unsigned long webhookWait = 45000;            // How long will we wair for a WebHook response
-const unsigned long resetWait = 30000;              // How long will we wait in ERROR_STATE until reset
+const unsigned long resetWait = 300000;             // How long will we wait in ERROR_STATE until reset
 const int publishFrequency = 1000;                  // We can only publish once a second
 unsigned long stayAwakeTimeStamp = 0;               // Timestamps for our timing variables..
 unsigned long stayAwake;                            // Stores the time we need to wait before napping
@@ -128,6 +131,8 @@ void setup()                                                      // Note: Disco
   pinMode(wakeUpPin, INPUT);                                      // Watchdog interrrupt
   pinMode(hardResetPin,OUTPUT);                                   // Pin used to power-cycle device
 
+  petWatchdog();                                                        // Need to pet the watchdog as we are waking from sleep
+
   char responseTopic[125];
   String deviceID = System.deviceID();                            // Multiple Electrons share the same hook - keeps things straight
   deviceID.toCharArray(responseTopic,125);
@@ -146,6 +151,7 @@ void setup()                                                      // Note: Disco
   Particle.variable("Heat-Index",heatIndexString);
 
   Particle.function("Measure-Now",measureNow);
+  Particle.function("HardReset",hardResetNow);
   Particle.function("LowPowerMode",setLowPowerMode);
   Particle.function("Solar-Mode",setSolarMode);
   Particle.function("Verbose-Mode",setVerboseMode);
@@ -185,9 +191,10 @@ void setup()                                                      // Note: Disco
     resetTimeStamp = millis();
     snprintf(StartupMessage,sizeof(StartupMessage),"Error - BME680 Initialization");
     state = ERROR_STATE;
+    resetTimeStamp = millis();
   }
 
-  // Set up the smapling paramatures
+  // Set up the sampling paramatures
   bme.setTemperatureOversampling(BME680_OS_8X);
   bme.setHumidityOversampling(BME680_OS_2X);
   bme.setPressureOversampling(BME680_OS_4X);
@@ -209,7 +216,6 @@ void setup()                                                      // Note: Disco
     snprintf(StartupMessage, sizeof(StartupMessage), "Failed to connect");
   }
 
-  petWatchdog();                                                        // Need to pet the watchdog as we are waking from sleep
   attachInterrupt(wakeUpPin,watchdogISR,RISING);                        // Attach watchdog interrupt - +1hr watchdog required
 
   if(verboseMode) Particle.publish("Startup",StartupMessage,PRIVATE);   // Let Particle know how the startup process went
@@ -233,6 +239,7 @@ void loop()
     if (!takeMeasurements())
     {
       state = ERROR_STATE;
+      resetTimeStamp = millis();
       if (verboseMode) {
         waitUntil(meterParticlePublish);
         Particle.publish("State","Error taking Measurements",PRIVATE);
@@ -249,7 +256,10 @@ void loop()
       sendEvent();                                                        // Send data to Ubidots
       state = RESP_WAIT_STATE;                                            // Wait for Response
     }
-    else state = ERROR_STATE;
+    else {
+      state = ERROR_STATE;
+      resetTimeStamp = millis();
+    }
     break;
 
   case RESP_WAIT_STATE:
@@ -264,6 +274,7 @@ void loop()
     resetTimeStamp = millis();
     Particle.publish("spark/device/session/end", "", PRIVATE);      // If the device times out on the Webhook response, it will ensure a new session is started on next connect
     state = ERROR_STATE;                                            // Response timed out
+    resetTimeStamp = millis();
   }
   break;
 
@@ -285,6 +296,7 @@ void loop()
       digitalWrite(blueLED,LOW);                                        // Turn off the LED
       readyForBed = true;                                               // Set the flag for the night
     }
+    petWatchdog();                                                      // Try to sync sleep and timer.
     int secondsToHour = (60*(60 - Time.minute()));                      // Time till the top of the hour
     System.sleep(SLEEP_MODE_SOFTPOWEROFF,secondsToHour);                // Very deep sleep till the next hour - then resets
     } break;
@@ -658,4 +670,16 @@ void petWatchdog() {
   digitalWrite(donePin,HIGH);
   digitalWrite(donePin,LOW);
   watchDogFlag = false;
+}
+
+int hardResetNow(String command)                                      // Will perform a hard reset on the Electron
+{
+  if (command == "1")
+  {
+    if (Particle.connected()) Particle.publish("Hard Reset",PRIVATE);
+    delay(1000);
+    digitalWrite(hardResetPin,HIGH);                                  // This will cut all power to the Electron AND the carrir board
+    return 1;                                                         // Unfortunately, this will never be sent
+  }
+  else return 0;
 }
