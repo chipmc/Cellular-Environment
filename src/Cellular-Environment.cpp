@@ -26,6 +26,7 @@
 // v1.10 - Added a couple calls to the watchdog timer to align it to the hourly schedule
 // v1.11 - Trying to figure out why the watchdog is not aligning to the hourly schedule
 // v1.12 - MAJOR - Moved from Electron to Boron and updated to new code-base
+// v1.13 - Minor updates to simplfy code
 
 // Particle Product definitions
 void setup();
@@ -50,7 +51,6 @@ void loadSystemDefaults();
 void checkSystemValues();
 void makeUpStringMessages();
 bool disconnectFromParticle();
-int resetCounts(String command);
 int hardResetNow(String command);
 int sendNow(String command);
 void resetEverything();
@@ -60,11 +60,11 @@ String batteryContextMessage();
 int setLowPowerMode(String command);
 void publishStateTransition(void);
 void dailyCleanup();
-#line 25 "/Users/chipmc/Documents/Maker/Particle/Projects/Cellular-Environment/src/Cellular-Environment.ino"
+#line 26 "/Users/chipmc/Documents/Maker/Particle/Projects/Cellular-Environment/src/Cellular-Environment.ino"
 PRODUCT_ID(PLATFORM_ID);                            // No longer need to specify - but device needs to be added to product ahead of time.
 PRODUCT_VERSION(1);
 #define DSTRULES isDSTusa
-char currentPointRelease[6] ="1.12";
+char currentPointRelease[6] ="1.13";
 
 namespace FRAM {                                    // Moved to namespace instead of #define to limit scope
   enum Addresses {
@@ -228,8 +228,7 @@ void setup()                                                      // Note: Disco
   Particle.variable("BatteryContext",batteryContextMessage);
 
 
-  Particle.function("resetCounts",resetCounts);
-  Particle.function("HardReset",hardResetNow);
+  Particle.function("HardReset",hardResetNow);                         // Functions relevant to an environmental sensor
   Particle.function("SendNow",sendNow);
   Particle.function("LowPowerMode",setLowPowerMode);
   Particle.function("Solar-Mode",setSolarMode);
@@ -1043,18 +1042,6 @@ bool disconnectFromParticle()                                          // Ensure
   return true;
 }
 
-int resetCounts(String command)                                        // Resets the current hourly and daily counts
-{
-  if (command == "1")
-  {
-    sysStatus.resetCount = 0;                                          // If so, store incremented number - watchdog must have done This
-    dataInFlight = false;
-    currentCountsWriteNeeded = true;                                   // Make sure we write to FRAM back in the main loop
-    systemStatusWriteNeeded = true;
-    return 1;
-  }
-  else return 0;
-}
 
 int hardResetNow(String command)                                      // Will perform a hard reset on the device
 {
